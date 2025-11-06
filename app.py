@@ -1,8 +1,7 @@
 import os
 import uuid
-import tempfile
-import threading
 import re
+import requests
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -11,10 +10,12 @@ from pdf2image import convert_from_bytes
 
 from camel_agents import MedicalReportAssistant
 
+
 # ---------------------------
 # 1. Load environment
 # ---------------------------
 load_dotenv("api.env")
+
 
 # ---------------------------
 # 2. Session state init
@@ -24,12 +25,15 @@ if "uploaded_file" not in st.session_state:
 if "file_bytes" not in st.session_state:
     st.session_state.file_bytes = None
 
+
 def clear_file():
     """Reset stored file in session state."""
     st.session_state.uploaded_file = None
     st.session_state.file_bytes = None
 
+
 st.session_state.clear_file = clear_file
+
 
 # ---------------------------
 # 3. Page configuration
@@ -40,6 +44,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 # ---------------------------
 # 4. Custom CSS & Header
@@ -148,6 +153,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
 # ---------------------------
 # 5. Theme helper
 # ---------------------------
@@ -156,36 +162,44 @@ def set_theme():
     # Placeholder for any Python-based theme logic
     pass
 
+
 set_theme()
+
 
 # ---------------------------
 # 6. Sidebar: File upload
 # ---------------------------
 with st.sidebar:
     st.subheader("📁 Upload Medical Report")
-    uploaded = st.file_uploader(
-        label="", type=["pdf"], label_visibility="collapsed"
-    )
+    uploaded = st.file_uploader(label="", type=["pdf"], label_visibility="collapsed")
 
     if uploaded:
-        # Store file bytes in session
         st.session_state.uploaded_file = uploaded
         st.session_state.file_bytes = uploaded.getbuffer()
 
-        # Button to clear upload
         st.button("🗑️ Clear Uploaded File", on_click=st.session_state.clear_file)
 
-        # PDF preview expander
+        # 👇 Paste it HERE (indented once inside "if uploaded:")
         with st.expander("📄 Preview Report Pages", expanded=False):
             try:
+                poppler_path = r"C:\Users\Admin\Downloads\Release-25.07.0-0\poppler-25.07.0\Library\bin"
                 images = convert_from_bytes(
-                    st.session_state.file_bytes, size=(300, None)
+                    st.session_state.file_bytes,
+                    dpi=200,
+                    size=(800, None),
+                    poppler_path=poppler_path
                 )
                 for i, img in enumerate(images, start=1):
                     st.image(img, caption=f"Page {i}", use_container_width=True)
                 st.success(f"✅ Showing all {len(images)} pages.")
             except Exception as e:
-                st.error(f"Could not preview PDF: {e}")
+                st.warning("""
+                ⚠️ Could not preview PDF.  
+                Please ensure **Poppler** is installed and the path is correct.  
+                """)
+                st.error(f"Technical details: {e}")
+
+
 
 # ---------------------------
 # 7. Utility functions
@@ -193,6 +207,7 @@ with st.sidebar:
 def clean_text(text: str) -> str:
     """Remove non-alphanumeric characters for TTS."""
     return re.sub(r"[^\w\s]", "", text)
+
 
 def generate_audio(text: str) -> str:
     """
@@ -205,9 +220,50 @@ def generate_audio(text: str) -> str:
     tts.save(audio_path)
     return audio_path
 
+
 def get_assistant() -> MedicalReportAssistant:
     """Instantiate and return the medical report assistant."""
     return MedicalReportAssistant()
+
+
+def get_medicine_recommendations(summary_text: str) -> str:
+    """Fetch AI-based medicine recommendations using Groq API."""
+    api_key = os.getenv("GROQ_API_KEY")  # ensure this is set in api.env
+    if not api_key:
+        return "⚠️ Groq API key missing. Please check your api.env file."
+
+    endpoint = "https://api.groq.com/openai/v1/chat/completions"
+    prompt = f"""
+    Based on this summary:
+    {summary_text}
+
+    Suggest safe, over-the-counter or commonly prescribed medicines (for informational purposes only).
+    Format response as:
+    - Medicine Name — Purpose
+    """
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    data = {
+    "model": "llama-3.1-8b-instant",  # updated Groq model
+    "messages": [{"role": "user", "content": prompt}],
+    "max_tokens": 250,
+    "temperature": 0.5
+    }
+
+
+    try:
+        response = requests.post(endpoint, headers=headers, json=data)
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content'].strip()
+        else:
+            return f"⚠️ Error fetching medicines: {response.text}"
+    except Exception as e:
+        return f"⚠️ API request failed: {e}"
+
 
 # ---------------------------
 # 8. Main interface: Tabs
@@ -257,7 +313,23 @@ with tab1:
                         f'<div class="result-box">{result}</div>',
                         unsafe_allow_html=True
                     )
-                    st.success("✅ Analysis completed successfully!")
+
+                    # --- 💊 New Medicine Recommendation Section ---
+                    with st.spinner("💊 Fetching recommended medicines..."):
+                        medicine_suggestions = get_medicine_recommendations(result)
+
+                    st.markdown("### 💊 Recommended Medicines")
+                    st.markdown(
+                        f'<div class="result-box">{medicine_suggestions}</div>',
+                        unsafe_allow_html=True
+                    )
+                    st.markdown("""
+**📝 Note:**  
+These medicine suggestions are generated by AI for **educational purposes only**.  
+Do **not** start, stop, or change any medication without consulting a qualified healthcare professional.
+""")
+
+                    st.success("✅ Analysis and medicine suggestions completed successfully!")
 
                 except Exception as e:
                     st.error(f"⚠️ Error: {e}")
@@ -267,14 +339,14 @@ with tab1:
                     if os.path.exists(temp_pdf):
                         os.remove(temp_pdf)
 
+
 with tab2:
     # About section
     st.markdown("""
     ## About MedSMedScope AI
- 
 
     MedSMedScope AI
-  leverages advanced AI to transform complex medical reports 
+    leverages advanced AI to transform complex medical reports 
     into clear, actionable insights in seconds.
 
     **Key Capabilities**
@@ -292,6 +364,7 @@ with tab2:
     [Groq Inference](https://groq.com/) and powered by secure, on-device 
     processing to ensure patient confidentiality.
     """)
+
 
 # ---------------------------
 # 9. Footer
