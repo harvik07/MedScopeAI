@@ -13,6 +13,15 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.lib.units import inch
+import os
+import re
+import pandas as pd
+import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from tensorflow.keras.utils import to_categorical
+
 
 
 def generate_pdf(summary_text, medicine_text, output_path="MedScope_Report.pdf"):
@@ -222,6 +231,39 @@ def set_theme():
 
 
 set_theme()
+# ---------------------------
+# 5.5 Neural Network Disease Prediction Model
+# ---------------------------
+
+@st.cache_resource
+def load_disease_model():
+    """Train neural network model for disease prediction."""
+    df = pd.read_csv(r"c:\Users\Admin\Downloads\merged_medical_dataset.csv")
+
+    le = LabelEncoder()
+    df["Disease_encoded"] = le.fit_transform(df["Disease"])
+
+    X = df.select_dtypes(include=["number"])
+    y = df["Disease_encoded"]
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    num_classes = len(np.unique(y))
+    model = Sequential([
+        Dense(128, activation='relu', input_dim=X_scaled.shape[1]),
+        Dropout(0.3),
+        Dense(64, activation='relu'),
+        Dropout(0.3),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    model.fit(X_scaled, y, epochs=25, batch_size=32, verbose=0)
+
+    return model, scaler, le, X.columns.tolist()
+
+model, scaler, label_encoder, feature_names = load_disease_model()
+
 
 
 # ---------------------------
@@ -275,6 +317,30 @@ def generate_audio(text: str) -> str:
     tts = gTTS(text=cleaned, lang="en")
     tts.save(audio_path)
     return audio_path
+def extract_lab_values(text):
+    """Improved regex to correctly extract full numerical lab values."""
+    patterns = {
+        "Glucose": r"(glucose|blood sugar)[^\d]*(\d{2,3}\.?\d*)",
+        "TSH": r"(TSH)[^\d]*(\d{1,3}\.?\d*)",
+        "T3": r"(T3)[^\d]*(\d{1,3}\.?\d*)",
+        "T4": r"(T4)[^\d]*(\d{1,3}\.?\d*)",
+        "Hemoglobin": r"(hemoglobin|Hb)[^\d]*(\d{1,2}\.?\d*)",
+        "Cholesterol": r"(cholesterol)[^\d]*(\d{2,3}\.?\d*)",
+        "AST": r"(AST|SGOT)[^\d]*(\d{1,3}\.?\d*)",
+        "ALT": r"(ALT|SGPT)[^\d]*(\d{1,3}\.?\d*)",
+        "Creatinine": r"(creatinine)[^\d]*(\d{1,2}\.?\d*)",
+        "Bilirubin": r"(bilirubin)[^\d]*(\d{1,2}\.?\d*)",
+        "Platelets": r"(platelet)[^\d]*(\d{1,3}\.?\d*)",
+        "RBC": r"(RBC)[^\d]*(\d{1,2}\.?\d*)",
+        "WBC": r"(WBC)[^\d]*(\d{3,5}\.?\d*)",
+    }
+
+    extracted = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            extracted[key] = float(match.group(2))
+    return extracted
 
 
 def get_assistant() -> MedicalReportAssistant:
@@ -323,7 +389,8 @@ def get_medicine_recommendations(summary_text: str) -> str:
 # ---------------------------
 # 8. Main interface: Tabs
 # ---------------------------
-tab1, tab2 = st.tabs(["Analyze Report", "ℹ️ About"])
+tab1, tab2, tab3 = st.tabs(["Analyze Report", "ℹ️ About", "🧠 Disease Prediction"])
+
 
 with tab1:
     # User query input
@@ -433,3 +500,53 @@ with tab2:
 # ---------------------------
 st.markdown("---")
 st.caption("MedSMedScope AI")
+with tab3:
+    st.subheader("🧠 AI Disease Prediction from Report")
+    st.markdown("""
+    This feature automatically extracts your lab values (like **Glucose, TSH, Hemoglobin, etc.**) 
+    from the uploaded report and predicts the most likely disease using our trained Neural Network model.
+    """)
+
+    if not st.session_state.uploaded_file:
+        st.warning("⚠️ Please upload a medical report in the sidebar first.")
+    else:
+        with st.spinner("🔍 Extracting medical values and predicting disease..."):
+            try:
+                # Load PDF text from uploaded file
+                temp_pdf = f"temp_{uuid.uuid4().hex}.pdf"
+                with open(temp_pdf, "wb") as f:
+                    f.write(st.session_state.file_bytes)
+
+                assistant = get_assistant()
+                result_text = assistant.analyze_query("Extract all medical values from this report.", temp_pdf)
+
+                # Extract lab values
+                extracted_values = extract_lab_values(result_text)
+                st.markdown("### 🧬 Extracted Lab Values:")
+                st.json(extracted_values)
+
+                if len(extracted_values) == 0:
+                    st.error("❌ No valid lab values detected. Please try a detailed report.")
+                else:
+                    # Prepare user data for prediction
+                    user_data = pd.DataFrame([extracted_values])
+                    for col in feature_names:
+                        if col not in user_data.columns:
+                            user_data[col] = 0
+
+                    X_user_scaled = scaler.transform(user_data[feature_names])
+
+                    preds = model.predict(X_user_scaled)
+                    predicted_class = np.argmax(preds)
+                    predicted_disease = label_encoder.inverse_transform([predicted_class])[0]
+                    confidence = np.max(preds) * 100
+
+                    st.success(f"✅ Predicted Disease: **{predicted_disease}**")
+                    st.info(f"📊 Confidence Level: **{confidence:.2f}%**")
+
+            except Exception as e:
+                st.error(f"⚠️ Error during disease prediction: {e}")
+            finally:
+                if os.path.exists(temp_pdf):
+                    os.remove(temp_pdf)
+
