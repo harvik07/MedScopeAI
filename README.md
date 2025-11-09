@@ -62,3 +62,11 @@ This project is an **AI-powered medical report analysis tool** that helps users 
 * **Text-to-Speech** → To generate audio
 * **Environment variables** → For secure API key handling
 
+| Step | What You Did                          | Why                            |
+| ---- | ------------------------------------- | ------------------------------ |
+| 1️⃣  | Downloaded real datasets              | Get diverse medical data       |
+| 2️⃣  | Standardized column names             | Uniform structure              |
+| 3️⃣  | Added “Disease” label                 | Enable classification          |
+| 4️⃣  | Merged all datasets                   | Create one unified CSV         |
+| 5️⃣  | Normalized numbers                    | Improve neural net performance |
+| 6️⃣  | Saved as `merged_medical_dataset.csv` | Use for training later         |
