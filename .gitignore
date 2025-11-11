@@ -1,0 +1,27 @@
+# Python / project
+__pycache__/
+*.pyc
+venv/
+.env
+api.env
+
+# Large files / models / data
+*.h5
+*.hdf5
+*.pkl
+*.csv
+*.zip
+*.tar
+*.tar.gz
+
+# Media / outputs
+*.pdf
+*.mp3
+*.mp4
+
+# IDE
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/
