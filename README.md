@@ -2,6 +2,19 @@
 ### 🩺 **Overview**
 
 This project is an **AI-powered medical report analysis tool** that helps users understand complex medical PDFs in seconds. It allows users to upload a medical report (like a blood test), ask questions about it, and instantly get clear, human-like explanations — both in text and audio form.
+Your app MedScope AI does 5 major things:
+
+🩺 Analyze uploaded medical reports (PDF) using AI
+
+🎧 Generate AI audio explanations (TTS)
+
+💊 Recommend medicines using Groq AI API
+
+🧠 Predict diseases using a trained Neural Network model
+
+🩻 Analyze Chest X-rays (Normal vs Pneumonia) using a CNN model
+
+⏰ Set medicine reminders using Telegram alerts
 
 ---
 
